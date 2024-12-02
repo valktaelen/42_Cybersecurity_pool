@@ -10,7 +10,7 @@ def usage():
     print ("-r -l [N]\tindicates the maximum depth level of the recursive download. If not indicated, it will be 5")
     print ("-p [PATH]\t indicates the path where the downloaded files will be saved. If not specified, ./data/ will be used.")
 
-def get_url(body: str, base_url: str):
+def get_url(body: str, base_url: str, cur_url: str):
     equal = False
     i_begin = -1
     i_end = -1
@@ -31,11 +31,22 @@ def get_url(body: str, base_url: str):
     if i_begin == -1 or i_end == -1:
         return None
     url = body[i_begin + 1:i_end]
-    if url.startswith("https"):
+    if url.startswith("#"):
+        return None
+    if url.find("://") != -1:
         return url
     if url.startswith("/"):
         return base_url + url
-    return base_url + "/" + url
+    if cur_url.rfind("/") < cur_url.rfind("."):
+        i_end_path = cur_url.rfind("/")
+        if i_end_path < cur_url.find("://")+3:
+            cur_dir = base_url
+        else:
+            cur_dir = cur_url[:i_end_path]
+        print(cur_url, url, cur_url.rfind("/"), cur_url.rfind("."))
+        return cur_dir + "/" + url
+    return cur_url + "/" + url
+
 
 def get_end_img_balise(html: str):
     in_quote = False
@@ -56,7 +67,7 @@ def get_end_img_balise(html: str):
                 return i
     return -1
 
-def get_url_img(body: str, base_url: str):
+def get_url_img(body: str, base_url: str, url: str):
     end = get_end_img_balise(body)
     if end == -1:
         return None
@@ -77,7 +88,7 @@ def get_url_img(body: str, base_url: str):
         elif not in_quote and not in_simp_quote:
             i_src = body.startswith("src", i)
             if i_src:
-                return get_url(body[i+len("src"):], base_url)
+                return get_url(body[i+len("src"):], base_url, url)
     return None
 
 
@@ -91,6 +102,7 @@ def get_base_url(url: str):
 def get_page_urls(url: str):
     r = requests.get(url)
     body = r.text
+    r.close()
     symbol="href"
     indexs = []
     i = 0
@@ -103,14 +115,22 @@ def get_page_urls(url: str):
         i += 1
     new_urls = []
     for i in indexs:
-        new_url = get_url(body[i+len(symbol):], get_base_url(url))
+        new_url = get_url(body[i+len(symbol):], get_base_url(url), url)
         if new_url is not None:
+            i_sharp = new_url.rfind("#")
+            if i_sharp != -1:
+                i_next = new_url.rfind("/")
+                if i_next == -1:
+                    new_url = new_url[:i_sharp]
+                elif i_sharp < i_next:
+                    new_url = new_url[:i_sharp] + new_url[i_next:]
             new_urls.append(new_url)
     return new_urls
 
 def get_page_img(url: str):
     r = requests.get(url)
     body = r.text
+    r.close()
     symbol="img"
     indexs = []
     i = 0
@@ -123,8 +143,15 @@ def get_page_img(url: str):
         i += 1
     new_urls = []
     for i in indexs:
-        new_url = get_url_img(body[i+len(symbol):], get_base_url(url))
+        new_url = get_url_img(body[i+len(symbol):], get_base_url(url), url)
         if new_url is not None:
+            i_sharp = new_url.rfind("#")
+            if i_sharp != -1:
+                i_next = new_url.rfind("/")
+                if i_next == -1:
+                    new_url = new_url[:i_sharp]
+                elif i_sharp < i_next:
+                    new_url = new_url[:i_sharp] + new_url[i_next:]
             new_urls.append(new_url)
     return new_urls
 
@@ -135,12 +162,16 @@ class Spider:
     level: int
     path: str
     url: str
+    done: list[str]
+    n_img: int
 
     def __init__(self, recursive = False, level = 5, path = "./data/", url = None):
         self.recursive = recursive
         self.level = level
         self.path = path
         self.url = url
+        self.n_img = 0
+        self.done = []
     
     def parsing(self, argv):
         level_data = False
@@ -154,6 +185,8 @@ class Spider:
                     self.level = int(arg)
                 except:
                     raise SpiderException("level parametter not an integer")
+                if self.level < 1:
+                    raise SpiderException("level parametter < 1")
                 level_data = False
             elif path_data:
                 self.path = arg
@@ -187,27 +220,51 @@ class Spider:
             level = self.level if self.recursive else 1
         if url is None:
             url = self.url
-        urls = get_page_urls(url)
-        imgs = get_page_img(url)
-        print("urls")
-        print(urls)
-        print("img")
-        print(imgs)
+        if url in self.done:
+            return
+        self.done.append(url)
+        urls = []
+        imgs: list[str] = []
+        try:
+            urls = get_page_urls(url)
+            imgs = get_page_img(url)
+        except Exception as err:
+            return
+        print(url)
+        # print("urls", urls)
+        # print("imgs", imgs)
+        for img in imgs:
+            img = img.replace("/./", "/")
+            if img in self.done:
+                continue
+            self.done.append(img)
+            if img.endswith(".jpg") or img.endswith(".jpeg") or img.endswith(".png") or img.endswith(".gif") or img.endswith(".bmp"):
+                name = self.path + img[img.find("://") + 3:]
+                print(name)
+                dir = name[:img.rfind("/")]
+                try:
+                    r = requests.get(img, allow_redirects=True)
+                    if r.status_code == 200:
+                        os.makedirs(dir, exist_ok=True)
+                        file = open(name, 'wb')
+                        file.write(r.content)
+                        self.n_img += 1
+                        file.close()
+                    r.close()
+                except FileExistsError:
+                    r.close()
+                except OSError as e:
+                    r.close()
+                    raise SpiderException(f"Create dir {dir}: {e}")
+                except Exception as err:
+                    print(f"Fail to write '{name}'.")
+                    file.close()
         if level > 1:
             for url in urls:
-                self.run_one_page(level, url)
-        for img in imgs:
-            name = self.path + img[img.find("://") + 3:]
-            dir = name[:img.rfind("/")]
-            try:
-                os.makedirs(dir, exist_ok=True)
-                print(f"Directory '{dir}' created successfully.")
-            except FileExistsError:
-                pass
-            except Exception as e:
-                raise SpiderException(f"Create dir {dir}: {e}")
-            r = requests.get(img, allow_redirects=True)
-            open(name, 'wb').write(r.content)
+                if url not in self.done:
+                    url = url.replace("/./", "/")
+                    self.run_one_page(level - 1, url)
+
 
     def print(self):
         print("recursive : ", self.recursive)
@@ -221,6 +278,7 @@ def main():
         spider.print()
         spider.create_dir()
         spider.run_one_page()
+        print("num img: ",spider.n_img)
 
     except SpiderException as err:
         print("Error: ", err)
