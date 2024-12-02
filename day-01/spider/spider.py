@@ -43,7 +43,6 @@ def get_url(body: str, base_url: str, cur_url: str):
             cur_dir = base_url
         else:
             cur_dir = cur_url[:i_end_path]
-        print(cur_url, url, cur_url.rfind("/"), cur_url.rfind("."))
         return cur_dir + "/" + url
     return cur_url + "/" + url
 
@@ -99,10 +98,8 @@ def get_base_url(url: str):
         return url
     return url[:i]
 
-def get_page_urls(url: str):
-    r = requests.get(url)
+def get_page_urls(url: str, r: requests.Response):
     body = r.text
-    r.close()
     symbol="href"
     indexs = []
     i = 0
@@ -127,10 +124,8 @@ def get_page_urls(url: str):
             new_urls.append(new_url)
     return new_urls
 
-def get_page_img(url: str):
-    r = requests.get(url)
+def get_page_img(url: str, r: requests.Response):
     body = r.text
-    r.close()
     symbol="img"
     indexs = []
     i = 0
@@ -222,12 +217,16 @@ class Spider:
             url = self.url
         if url in self.done:
             return
+        if get_base_url(url) != get_base_url(self.url):
+            return
         self.done.append(url)
         urls = []
         imgs: list[str] = []
         try:
-            urls = get_page_urls(url)
-            imgs = get_page_img(url)
+            r = requests.get(url)
+            urls = get_page_urls(url, r)
+            imgs = get_page_img(url, r)
+            r.close()
         except Exception as err:
             return
         print(url)
@@ -279,6 +278,7 @@ def main():
         spider.create_dir()
         spider.run_one_page()
         print("num img: ",spider.n_img)
+        print("num url: ", len(spider.done))
 
     except SpiderException as err:
         print("Error: ", err)
