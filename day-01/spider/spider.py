@@ -1,95 +1,32 @@
 import sys
 import os
 import requests
+from lxml import html
 
 def usage():
-    print ("")
-    print ("USAGE: ")
-    print ("./spider [-rlp] URL")
-    print ("-r\t recursively downloads the images in a URL received as a parameter")
-    print ("-r -l [N]\tindicates the maximum depth level of the recursive download. If not indicated, it will be 5")
-    print ("-p [PATH]\t indicates the path where the downloaded files will be saved. If not specified, ./data/ will be used.")
+    print ("""
+USAGE:
+./spider [-rlp] URL
+-r          recursively downloads the images in a URL received as a parameter
+-r -l [N]   indicates the maximum depth level of the recursive download. If not indicated, it will be 5
+-p [PATH]   indicates the path where the downloaded files will be saved. If not specified, ./data/ will be used.
+""")
 
-def get_url(body: str, base_url: str, cur_url: str):
-    equal = False
-    i_begin = -1
-    i_end = -1
-    for i, c in enumerate(body):
-        if not equal:
-            if c != ' ' and c != '=':
-                return None
-            if c == '=':
-                equal = True
-        elif i_begin == -1:
-            if c != ' ' and c != '"':
-                return None
-            if c == '"':
-                i_begin = i
-        elif i_begin and c == '"':
-            i_end = i
-            break
-    if i_begin == -1 or i_end == -1:
+def get_real_url(relative: str, cur_url: str):
+    if relative.startswith("#"):
         return None
-    url = body[i_begin + 1:i_end]
-    if url.startswith("#"):
-        return None
-    if url.find("://") != -1:
-        return url
-    if url.startswith("/"):
-        return base_url + url
+    if relative.find("://") != -1:
+        return relative
+    if relative.startswith("/"):
+        return get_base_url(cur_url) + relative
     if cur_url.rfind("/") < cur_url.rfind("."):
         i_end_path = cur_url.rfind("/")
         if i_end_path < cur_url.find("://")+3:
-            cur_dir = base_url
+            cur_dir = get_base_url(cur_url)
         else:
             cur_dir = cur_url[:i_end_path]
-        return cur_dir + "/" + url
-    return cur_url + "/" + url
-
-
-def get_end_img_balise(html: str):
-    in_quote = False
-    in_simp_quote = False
-    for i, c in enumerate(html):
-        if c == '"':
-            if not in_quote and not in_simp_quote:
-                in_quote = True
-            elif in_quote:
-                in_quote = False
-        elif c == '\'':
-            if not in_quote and not in_simp_quote:
-                in_simp_quote = True
-            elif in_simp_quote:
-                in_simp_quote = False
-        elif not in_quote and not in_simp_quote:
-            if c == '>':
-                return i
-    return -1
-
-def get_url_img(body: str, base_url: str, url: str):
-    end = get_end_img_balise(body)
-    if end == -1:
-        return None
-    body = body[:end]
-    in_quote = False
-    in_simp_quote = False
-    for i, c in enumerate(body):
-        if c == '"':
-            if not in_quote and not in_simp_quote:
-                in_quote = True
-            elif in_quote:
-                in_quote = False
-        elif c == '\'':
-            if not in_quote and not in_simp_quote:
-                in_simp_quote = True
-            elif in_simp_quote:
-                in_simp_quote = False
-        elif not in_quote and not in_simp_quote:
-            i_src = body.startswith("src", i)
-            if i_src:
-                return get_url(body[i+len("src"):], base_url, url)
-    return None
-
+        return cur_dir + "/" + relative
+    return cur_url + "/" + relative
 
 
 def get_base_url(url: str):
@@ -98,57 +35,27 @@ def get_base_url(url: str):
         return url
     return url[:i]
 
-def get_page_urls(url: str, r: requests.Response):
-    body = r.text
-    symbol="href"
-    indexs = []
-    i = 0
-    i_tmp = 0
-    while i_tmp != -1:
-        i_tmp = body[i:].find(symbol)
-        i += i_tmp
-        if i != -1:
-            indexs.append(i)
-        i += 1
+def get_page_urls(cur_url: str, r: requests.Response):
+    root = html.fromstring(r.content)
+    urls = root.xpath("//a[@href]")
     new_urls = []
-    for i in indexs:
-        new_url = get_url(body[i+len(symbol):], get_base_url(url), url)
-        if new_url is not None:
-            i_sharp = new_url.rfind("#")
-            if i_sharp != -1:
-                i_next = new_url.rfind("/")
-                if i_next == -1:
-                    new_url = new_url[:i_sharp]
-                elif i_sharp < i_next:
-                    new_url = new_url[:i_sharp] + new_url[i_next:]
-            new_urls.append(new_url)
+    for url in urls:
+        href = url.get("href")
+        url_abs = get_real_url(href, cur_url)
+        if url_abs is not None:
+            new_urls.append(url_abs)
     return new_urls
 
 def get_page_img(url: str, r: requests.Response):
-    body = r.text
-    symbol="img"
-    indexs = []
-    i = 0
-    i_tmp = 0
-    while i_tmp != -1:
-        i_tmp = body[i:].find(symbol)
-        i += i_tmp
-        if i != -1:
-            indexs.append(i)
-        i += 1
-    new_urls = []
-    for i in indexs:
-        new_url = get_url_img(body[i+len(symbol):], get_base_url(url), url)
-        if new_url is not None:
-            i_sharp = new_url.rfind("#")
-            if i_sharp != -1:
-                i_next = new_url.rfind("/")
-                if i_next == -1:
-                    new_url = new_url[:i_sharp]
-                elif i_sharp < i_next:
-                    new_url = new_url[:i_sharp] + new_url[i_next:]
-            new_urls.append(new_url)
-    return new_urls
+    root = html.fromstring(r.content)
+    imgs = root.xpath("//img[@src]")
+    new_imgs = []
+    for img in imgs:
+        img_url = img.get("src")
+        img_abs = get_real_url(img_url, url)
+        if img_abs is not None:
+            new_imgs.append(img_abs)
+    return new_imgs
 
 class SpiderException(Exception):
     pass
@@ -217,21 +124,14 @@ class Spider:
             url = self.url
         if url in self.done:
             return
-        if get_base_url(url) != get_base_url(self.url):
-            return
+        # if get_base_url(url) != get_base_url(self.url):
+        #     return
         self.done.append(url)
-        urls = []
-        imgs: list[str] = []
-        try:
-            r = requests.get(url)
-            urls = get_page_urls(url, r)
-            imgs = get_page_img(url, r)
-            r.close()
-        except Exception as err:
-            return
-        print(url)
-        # print("urls", urls)
-        # print("imgs", imgs)
+        r = requests.get(url)
+        urls: list[str] =  get_page_urls(url, r)
+        imgs: list[str] =  get_page_img(url, r)
+        r.close()
+        print(f"{url} | ref {len(urls)} | img {len(imgs)}")
         for img in imgs:
             img = img.replace("/./", "/")
             if img in self.done:
