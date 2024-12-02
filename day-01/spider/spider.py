@@ -28,6 +28,8 @@ def get_real_url(relative: str, cur_url: str):
         return None
     if relative.find("://") != -1:
         return relative
+    if relative.startswith("//"):
+        return "https:" + relative
     if relative.startswith("/"):
         return get_base_url(cur_url) + relative
     if cur_url.endswith("/"):
@@ -45,6 +47,17 @@ def get_base_url(url: str):
         return url
     return url[:i]
 
+def get_main_domain(url1:str):
+    base1 = get_base_url(url1)
+    fst1 = base1.rfind(".")
+    if fst1 != -1:
+        fst1 = base1.rfind(".", 0, fst1)
+    if fst1 != -1:
+        base1 = base1[fst1 + 1:]
+    else:
+        base1 = base1[base1.find("://") + 3:]
+    return base1
+
 def get_page_urls(cur_url: str, r: requests.Response):
     root = html.fromstring(r.content)
     urls = root.xpath("//a[@href]")
@@ -55,6 +68,7 @@ def get_page_urls(cur_url: str, r: requests.Response):
             continue
         url_abs = get_real_url(href, cur_url)
         if url_abs is not None:
+            url_abs = url_abs.replace("/./", "/")
             new_urls.append(url_abs)
     return new_urls
 
@@ -66,6 +80,7 @@ def get_page_img(url: str, r: requests.Response):
         img_url = img.get("src")
         img_abs = get_real_url(img_url, url)
         if img_abs is not None:
+            img_abs = img_abs.replace("/./", "/")
             new_imgs.append(img_abs)
     return new_imgs
 
@@ -136,7 +151,8 @@ class Spider:
             url = self.url
         if url in self.done:
             return
-        if get_base_url(url) != get_base_url(self.url):
+        main_domain = get_main_domain(self.url)
+        if main_domain != get_main_domain(url):
             return
         self.done.append(url)
         r = requests.get(url)
@@ -145,12 +161,10 @@ class Spider:
         urls: list[str] =  get_page_urls(url, r)
         imgs: list[str] =  get_page_img(url, r)
         r.close()
-        print(f"status code {bcolors.OKGREEN if (code >= 200 and code < 300) else bcolors.WARNING}{code:03d}{bcolors.ENDC} | ref {len(urls):04d} | img {len(imgs):04d} | time {t:.6}s | {url}")
-        base = get_base_url(self.url)
+        print(f"status code {bcolors.OKGREEN if (code >= 200 and code < 300) else bcolors.WARNING}{code:03d}{bcolors.ENDC} | ref {len(urls):04d} | img {len(imgs):04d} | time {t:.6f}s | {url}")
         for img in imgs:
-            if get_base_url(img) != base:
+            if get_main_domain(img) != main_domain:
                 continue
-            img = img.replace("/./", "/")
             if img in self.done:
                 continue
             self.done.append(img)
@@ -178,7 +192,6 @@ class Spider:
         if level > 1:
             for url in urls:
                 if url not in self.done:
-                    url = url.replace("/./", "/")
                     self.run_one_page(level - 1, url)
 
     def run(self, argv: list[str]):
@@ -207,6 +220,8 @@ def main():
         print(f"{bcolors.FAIL}Error: {err}{bcolors.ENDC}")
         usage()
         sys.exit(1)
+    except Exception as err:
+        print(f"{bcolors.FAIL}Error -- : {err}{bcolors.ENDC}")
     print(spider)
 
 if __name__ == '__main__':
