@@ -3,6 +3,17 @@ import os
 import requests
 from lxml import html
 
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
 def usage():
     print ("""
 USAGE:
@@ -19,14 +30,13 @@ def get_real_url(relative: str, cur_url: str):
         return relative
     if relative.startswith("/"):
         return get_base_url(cur_url) + relative
-    if cur_url.rfind("/") < cur_url.rfind("."):
-        i_end_path = cur_url.rfind("/")
-        if i_end_path < cur_url.find("://")+3:
-            cur_dir = get_base_url(cur_url)
-        else:
-            cur_dir = cur_url[:i_end_path]
-        return cur_dir + "/" + relative
-    return cur_url + "/" + relative
+    if cur_url.endswith("/"):
+        return cur_url + relative
+    i_end_path = cur_url.rfind("/")
+    cur_dir = cur_url[:i_end_path]
+    if i_end_path < cur_url.find("://")+3:
+        cur_dir = get_base_url(cur_url)
+    return cur_dir + "/" + relative
 
 
 def get_base_url(url: str):
@@ -41,6 +51,8 @@ def get_page_urls(cur_url: str, r: requests.Response):
     new_urls = []
     for url in urls:
         href = url.get("href")
+        if href.startswith("mailto:") or href.startswith("tel:"):
+            continue
         url_abs = get_real_url(href, cur_url)
         if url_abs is not None:
             new_urls.append(url_abs)
@@ -74,13 +86,13 @@ class Spider:
         self.url = url
         self.n_img = 0
         self.done = []
-    
-    def parsing(self, argv):
+
+    def parsing(self, argv: list[str]):
         level_data = False
         path_data = False
         for arg in argv:
             if self.url is not None:
-                print ("All parameters after url are ignored")
+                print (f"{bcolors.FAIL}All parameters after url are ignored{bcolors.ENDC}")
                 break
             elif level_data:
                 try:
@@ -107,16 +119,16 @@ class Spider:
             raise SpiderException("path parametter missing")
         if self.url is None:
             raise SpiderException("URL missing")
-    
+
     def create_dir(self):
         try:
             os.mkdir(self.path)
-            print(f"Directory '{self.path}' created successfully.")
+            print(f"{bcolors.OKCYAN}Directory '{self.path}' created successfully.{bcolors.ENDC}")
         except FileExistsError:
             print("Dir already exists")
         except Exception as e:
             raise SpiderException(f"Create dir {self.path}: {e}")
-    
+
     def run_one_page(self, level: int = None, url: str = None):
         if level is None:
             level = self.level if self.recursive else 1
@@ -124,22 +136,26 @@ class Spider:
             url = self.url
         if url in self.done:
             return
-        # if get_base_url(url) != get_base_url(self.url):
-        #     return
+        if get_base_url(url) != get_base_url(self.url):
+            return
         self.done.append(url)
         r = requests.get(url)
+        code = r.status_code
+        t = r.elapsed.total_seconds()
         urls: list[str] =  get_page_urls(url, r)
         imgs: list[str] =  get_page_img(url, r)
         r.close()
-        print(f"{url} | ref {len(urls)} | img {len(imgs)}")
+        print(f"status code {bcolors.OKGREEN if (code >= 200 and code < 300) else bcolors.WARNING}{code:03d}{bcolors.ENDC} | ref {len(urls):04d} | img {len(imgs):04d} | time {t:.6}s | {url}")
+        base = get_base_url(self.url)
         for img in imgs:
+            if get_base_url(img) != base:
+                continue
             img = img.replace("/./", "/")
             if img in self.done:
                 continue
             self.done.append(img)
             if img.endswith(".jpg") or img.endswith(".jpeg") or img.endswith(".png") or img.endswith(".gif") or img.endswith(".bmp"):
                 name = self.path + img[img.find("://") + 3:]
-                print(name)
                 dir = name[:img.rfind("/")]
                 try:
                     r = requests.get(img, allow_redirects=True)
@@ -147,6 +163,7 @@ class Spider:
                         os.makedirs(dir, exist_ok=True)
                         file = open(name, 'wb')
                         file.write(r.content)
+                        print(f"{bcolors.OKBLUE}{name}{bcolors.ENDC}")
                         self.n_img += 1
                         file.close()
                     r.close()
@@ -156,7 +173,7 @@ class Spider:
                     r.close()
                     raise SpiderException(f"Create dir {dir}: {e}")
                 except Exception as err:
-                    print(f"Fail to write '{name}'.")
+                    print(f"{bcolors.WARNING}Fail to write '{name}'.{bcolors.ENDC}")
                     file.close()
         if level > 1:
             for url in urls:
@@ -164,26 +181,33 @@ class Spider:
                     url = url.replace("/./", "/")
                     self.run_one_page(level - 1, url)
 
+    def run(self, argv: list[str]):
+        self.parsing(argv)
+        self.create_dir()
+        self.run_one_page()
 
-    def print(self):
-        print("recursive : ", self.recursive)
-        print("level : ", self.level)
-        print("path : ", self.path)
+
+    def __str__(self):
+        return f"""
+Spider :
+    recursive {self.recursive}
+    level     {self.level}
+    path      {self.path}
+    url       {self.url}
+    n_img     {self.n_img}
+    done      {len(self.done)} url done
+        """
 
 def main():
     spider = Spider()
     try:
-        spider.parsing(sys.argv[1:])
-        spider.print()
-        spider.create_dir()
-        spider.run_one_page()
-        print("num img: ",spider.n_img)
-        print("num url: ", len(spider.done))
+        spider.run(sys.argv[1:])
 
     except SpiderException as err:
-        print("Error: ", err)
+        print(f"{bcolors.FAIL}Error: {err}{bcolors.ENDC}")
         usage()
         sys.exit(1)
+    print(spider)
 
 if __name__ == '__main__':
     main()

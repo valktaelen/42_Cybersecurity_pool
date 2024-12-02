@@ -1,16 +1,17 @@
 
 EXEC	=spider.py
 ENV		=./venv
-PIP		:= $(ENV)/bin/pip3
 
 all: $(ENV) activate
 
 $(ENV):
+	pip3 install venv
 	mkdir -p $(ENV)
 	python3 -m venv $(ENV)
 
 activate:
+	@echo Do the following command:
 	@echo source $(ENV)/bin/activate
-	@echo $(PIP) install lxml
+	@echo pip3 install lxml
 	@echo python3 $(EXEC)
 
