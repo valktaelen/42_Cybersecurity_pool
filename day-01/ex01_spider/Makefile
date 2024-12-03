@@ -5,13 +5,13 @@ ENV		=./venv
 all: $(ENV) activate
 
 $(ENV):
-	pip3 install venv
+	python3 -m pip install virtualenv
 	mkdir -p $(ENV)
 	python3 -m venv $(ENV)
 
 activate:
 	@echo Do the following command:
 	@echo source $(ENV)/bin/activate
-	@echo pip3 install lxml
+	@echo pip3 install lxml requests
 	@echo python3 $(EXEC)
 

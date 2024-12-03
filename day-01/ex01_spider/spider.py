@@ -24,21 +24,28 @@ USAGE:
 """)
 
 def get_real_url(relative: str, cur_url: str):
+    ret: str | None = None
     if relative.startswith("#"):
-        return None
-    if relative.find("://") != -1:
-        return relative
-    if relative.startswith("//"):
-        return "https:" + relative
-    if relative.startswith("/"):
-        return get_base_url(cur_url) + relative
-    if cur_url.endswith("/"):
-        return cur_url + relative
-    i_end_path = cur_url.rfind("/")
-    cur_dir = cur_url[:i_end_path]
-    if i_end_path < cur_url.find("://")+3:
-        cur_dir = get_base_url(cur_url)
-    return cur_dir + "/" + relative
+        ret = None
+    elif relative == ".":
+        ret = None
+    elif relative.find("://") != -1:
+        ret = relative
+    elif relative.startswith("//"):
+        ret = "https:" + relative
+    elif relative.startswith("/"):
+        ret = get_base_url(cur_url) + relative
+    elif cur_url.endswith("/"):
+        ret = cur_url + relative
+    else:
+        i_end_path = cur_url.rfind("/")
+        cur_dir = cur_url[:i_end_path]
+        if i_end_path < cur_url.find("://")+3:
+            cur_dir = get_base_url(cur_url)
+        ret = cur_dir + "/" + relative
+    if ret is not None:
+        ret = ret.replace("/./", "/")
+    return ret
 
 
 def get_base_url(url: str):
@@ -68,7 +75,6 @@ def get_page_urls(cur_url: str, r: requests.Response):
             continue
         url_abs = get_real_url(href, cur_url)
         if url_abs is not None:
-            url_abs = url_abs.replace("/./", "/")
             new_urls.append(url_abs)
     return new_urls
 
@@ -80,7 +86,6 @@ def get_page_img(url: str, r: requests.Response):
         img_url = img.get("src")
         img_abs = get_real_url(img_url, url)
         if img_abs is not None:
-            img_abs = img_abs.replace("/./", "/")
             new_imgs.append(img_abs)
     return new_imgs
 
@@ -93,6 +98,7 @@ class Spider:
     url: str
     done: list[str]
     n_img: int
+    main_domain: str
 
     def __init__(self, recursive = False, level = 5, path = "./data/", url = None):
         self.recursive = recursive
@@ -134,6 +140,8 @@ class Spider:
             raise SpiderException("path parametter missing")
         if self.url is None:
             raise SpiderException("URL missing")
+        self.main_domain = get_main_domain(self.url)
+        self.path += "/"
 
     def create_dir(self):
         try:
@@ -146,27 +154,31 @@ class Spider:
 
     def run_one_page(self, level: int = None, url: str = None):
         if level is None:
-            level = self.level if self.recursive else 1
+            level = self.level if self.recursive else 0
         if url is None:
             url = self.url
         if url in self.done:
             return
-        main_domain = get_main_domain(self.url)
-        if main_domain != get_main_domain(url):
+        if self.main_domain != get_main_domain(url):
             return
         self.done.append(url)
-        r = requests.get(url)
-        code = r.status_code
-        t = r.elapsed.total_seconds()
-        urls: list[str] =  get_page_urls(url, r)
-        imgs: list[str] =  get_page_img(url, r)
-        r.close()
+        t = 0
+        code = 0
+        urls: list[str] = []
+        imgs: list[str] = []
+        try:
+            r = requests.get(url)
+            code = r.status_code
+            t = r.elapsed.total_seconds()
+            urls =  get_page_urls(url, r)
+            imgs =  get_page_img(url, r)
+            r.close()
+        except requests.exceptions.MissingSchema as err:
+            print(f"{bcolors.FAIL}{err}{bcolors.ENDC}")
         print(f"status code {bcolors.OKGREEN if (code >= 200 and code < 300) else bcolors.WARNING}{code:03d}{bcolors.ENDC} | ref {len(urls):04d} | img {len(imgs):04d} | time {t:.6f}s | {url}")
         for img in imgs:
-            if get_main_domain(img) != main_domain:
-                continue
-            if img in self.done:
-                continue
+            # if get_main_domain(img) != self.main_domain or img in self.done:
+            #     continue
             self.done.append(img)
             if img.endswith(".jpg") or img.endswith(".jpeg") or img.endswith(".png") or img.endswith(".gif") or img.endswith(".bmp"):
                 name = self.path + img[img.find("://") + 3:]
@@ -189,7 +201,7 @@ class Spider:
                 except Exception as err:
                     print(f"{bcolors.WARNING}Fail to write '{name}'.{bcolors.ENDC}")
                     file.close()
-        if level > 1:
+        if level > 0:
             for url in urls:
                 if url not in self.done:
                     self.run_one_page(level - 1, url)
