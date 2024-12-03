@@ -66,27 +66,34 @@ def get_main_domain(url1:str):
     return base1
 
 def get_page_urls(cur_url: str, r: requests.Response):
-    root = html.fromstring(r.content)
-    urls = root.xpath("//a[@href]")
     new_urls = []
-    for url in urls:
-        href = url.get("href")
-        if href.startswith("mailto:") or href.startswith("tel:"):
-            continue
-        url_abs = get_real_url(href, cur_url)
-        if url_abs is not None:
-            new_urls.append(url_abs)
+    try:
+        root = html.fromstring(r.content)
+        urls = root.xpath("//a[@href]")
+        for url in urls:
+            href = url.get("href")
+            if href.startswith("mailto:") or href.startswith("tel:"):
+                continue
+            url_abs = get_real_url(href, cur_url)
+            if url_abs is not None:
+                new_urls.append(url_abs)
+    except Exception as err:
+        print(f"{bcolors.WARNING}{cur_url} : Urls not found {err}{bcolors.ENDC}")
     return new_urls
 
 def get_page_img(url: str, r: requests.Response):
-    root = html.fromstring(r.content)
-    imgs = root.xpath("//img[@src]")
     new_imgs = []
-    for img in imgs:
-        img_url = img.get("src")
-        img_abs = get_real_url(img_url, url)
-        if img_abs is not None:
-            new_imgs.append(img_abs)
+    try:
+        root = html.fromstring(r.content)
+        imgs = root.xpath("//img[@src]")
+        for img in imgs:
+            img_url = img.get("src")
+            img_abs = get_real_url(img_url, url)
+            if img_abs is not None:
+                new_imgs.append(img_abs)
+    except Exception as err:
+        print(f"{bcolors.WARNING}{url} : Image not found {err}{bcolors.ENDC}")
+        return []
     return new_imgs
 
 class SpiderException(Exception):
@@ -173,12 +180,12 @@ class Spider:
             urls =  get_page_urls(url, r)
             imgs =  get_page_img(url, r)
             r.close()
-        except requests.exceptions.MissingSchema as err:
+        except Exception as err:
             print(f"{bcolors.FAIL}{err}{bcolors.ENDC}")
         print(f"status code {bcolors.OKGREEN if (code >= 200 and code < 300) else bcolors.WARNING}{code:03d}{bcolors.ENDC} | ref {len(urls):04d} | img {len(imgs):04d} | time {t:.6f}s | {url}")
         for img in imgs:
-            # if get_main_domain(img) != self.main_domain or img in self.done:
-            #     continue
+            if img in self.done: #or get_main_domain(img) != self.main_domain
+                continue
             self.done.append(img)
             if img.endswith(".jpg") or img.endswith(".jpeg") or img.endswith(".png") or img.endswith(".gif") or img.endswith(".bmp"):
                 name = self.path + img[img.find("://") + 3:]
@@ -230,10 +237,9 @@ def main():
 
     except SpiderException as err:
         print(f"{bcolors.FAIL}Error: {err}{bcolors.ENDC}")
+        print(spider)
         usage()
         sys.exit(1)
-    except Exception as err:
-        print(f"{bcolors.FAIL}Error -- : {err}{bcolors.ENDC}")
     print(spider)
 
 if __name__ == '__main__':

@@ -12,6 +12,6 @@ $(ENV):
 activate:
 	@echo Do the following command:
 	@echo source $(ENV)/bin/activate
-	@echo pip3 install lxml requests
+	@echo pip3 install -r requirements.txt
 	@echo python3 $(EXEC)
 
