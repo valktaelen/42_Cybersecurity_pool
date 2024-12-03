@@ -32,7 +32,11 @@ def get_real_url(relative: str, cur_url: str):
     elif relative.find("://") != -1:
         ret = relative
     elif relative.startswith("//"):
-        ret = "https:" + relative
+        i = cur_url.find(":")
+        if i == -1:
+            ret = None
+        else:
+            ret = cur_url[:i] + relative
     elif relative.startswith("/"):
         ret = get_base_url(cur_url) + relative
     elif cur_url.endswith("/"):
@@ -175,6 +179,7 @@ class Spider:
         imgs: list[str] = []
         try:
             r = requests.get(url)
+            url = r.url
             code = r.status_code
             t = r.elapsed.total_seconds()
             urls =  get_page_urls(url, r)

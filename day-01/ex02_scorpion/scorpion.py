@@ -1,5 +1,6 @@
-import datetime
 import sys
+import os
+import time
 import PIL.Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
@@ -41,6 +42,20 @@ class Scorpion:
     def run(self):
         print(self.path)
         img = PIL.Image.open(self.path)
+        ti_c = os.path.getctime(self.path)
+        ti_m = os.path.getmtime(self.path)
+        c_ti = time.ctime(ti_c)
+        m_ti = time.ctime(ti_m)
+        print(f"created: {c_ti}")
+        print(f"modified: {m_ti}")
+        if hasattr(img, 'size'):
+            print(f"Size: {img.size}")
+        if hasattr(img, 'width'):
+            print(f"Width: {img.width}")
+        if hasattr(img, 'height'):
+            print(f"Height: {img.height}")
+        if hasattr(img, 'is_animated'):
+            print(f"Is_animated: {img.is_animated}")
         exif_data = img.getexif()._get_merged_dict()
         keys = list(exif_data.keys())
         keys = [k for k in keys if k in TAGS]
