@@ -53,7 +53,12 @@ def get_real_url(relative: str, cur_url: str):
 
 
 def get_base_url(url: str):
-    i = url.find("/", len("https://"))
+    i, t = 0, 0
+    while t < 3:
+        i = url.find("/", i + 1)
+        if i == -1:
+            return url
+        t += 1
     if i == -1:
         return url
     return url[:i]
