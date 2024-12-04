@@ -200,7 +200,7 @@ class Spider:
             self.done.append(img)
             if img.endswith(".jpg") or img.endswith(".jpeg") or img.endswith(".png") or img.endswith(".gif") or img.endswith(".bmp"):
                 name = self.path + img[img.find("://") + 3:]
-                dir = name[:img.rfind("/")]
+                dir = name[:name.rfind("/")]
                 try:
                     r = requests.get(img, allow_redirects=True)
                     if r.status_code == 200:
