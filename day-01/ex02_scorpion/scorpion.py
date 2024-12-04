@@ -41,13 +41,16 @@ class Scorpion:
 
     def run(self):
         print(self.path)
-        img = PIL.Image.open(self.path)
-        ti_c = os.path.getctime(self.path)
-        ti_m = os.path.getmtime(self.path)
-        c_ti = time.ctime(ti_c)
-        m_ti = time.ctime(ti_m)
-        print(f"created: {c_ti}")
-        print(f"modified: {m_ti}")
+        try:
+            img = PIL.Image.open(self.path)
+        except Exception as err:
+            raise ScorpionException(err)
+        try:
+            print(f"created: {time.ctime(os.path.getctime(self.path))}")
+            print(f"modified: {time.ctime(os.path.getmtime(self.path))}")
+            print(f"access: {time.ctime(os.path.getatime(self.path))}")
+        except Exception as err:
+            print(f"{bcolors.FAIL}{err}{bcolors.ENDC}")
         if hasattr(img, 'size'):
             print(f"Size: {img.size}")
         if hasattr(img, 'width'):
