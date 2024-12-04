@@ -36,7 +36,7 @@ def get_real_url(relative: str, cur_url: str):
         if i == -1:
             ret = None
         else:
-            ret = cur_url[:i] + relative
+            ret = cur_url[:i + 1] + relative
     elif relative.startswith("/"):
         ret = get_base_url(cur_url) + relative
     elif cur_url.endswith("/"):
