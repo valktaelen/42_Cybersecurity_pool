@@ -94,7 +94,7 @@ class TOTP:
         self.secret_key = secret_key
         self.n_digit = n_digit
         self.delta_time = delta_time
-    
+
     def run(self):
         c: int = int(time.time() // self.delta_time)
         hotp = HOTP(self.secret_key, c, self.n_digit)
@@ -131,13 +131,59 @@ class OTP:
 
     def run(self):
         #TODO open files
-        a="ONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG4Y="
-        teste = pyotp.HOTP(a, digest=sha1)
-        print("real",teste.at(0))
-        print("#########")
-        totp = TOTP(a)
-        res = totp.run()
-        print(f"TOTP value : {res}")
+        if self.generator_file is not None:
+            print("################ Generate key")
+            try:
+                with open(self.generator_file) as file:
+                    hex_file = file.read()
+                    hex_file = hex_file.split()
+                    if len(hex_file) != 1:
+                        raise OTPException(f"{self.generator_file} : not an hexadecimal")
+                    hex_file = hex_file[0]
+                    l = len(hex_file)
+                    if l < 64:
+                        raise OTPException(f"{self.generator_file} : len of hex less than 64 characters")
+                    if l % 2 != 0:
+                        raise OTPException(f"{self.generator_file} : not an hexadecimal")
+                    hex_str = ""
+                    hex_converter: dict[str, int] = {}
+                    for i in range (16):
+                        char = hex(i)[-1]
+                        hex_converter[char] = i
+                        hex_converter[char.capitalize()] = i
+                    # print(hex_converter)
+                    for i in range(0, l, 2):
+                        fst = hex_converter.get(hex_file[i], None)
+                        sec = hex_converter.get(hex_file[i+1], None)
+                        if fst is None or sec is None:
+                            raise OTPException(f"{self.generator_file} : not an hexadecimal")
+                        byte_val = (fst << 4) + sec
+                        hex_str += chr(byte_val)
+                    base = base64.b32encode(bytearray(hex_str, 'utf-8'))
+                    base = base.decode()
+                    print("hex    ", hex_file)
+                    print("str    ", hex_str)
+                    print("base32 ", base)
+                    with open("ft_otp.key", 'w') as key_file:
+                        key_file.write(base)
+            except Exception as err:
+                print(err)
+        if self.key_file is not None:
+            print("################ TOTP")
+            try:
+                with open(self.key_file) as file:
+                    key_file = file.read()
+                    key_file = key_file.split()
+                    if len(key_file) != 1:
+                        raise OTPException(f"{self.generator_file} : not a key")
+                    key = key_file[0]
+                    totp = TOTP(key)
+                    res = totp.run()
+                    print(f"TOTP value : {res}")
+                    # teste = pyotp.TOTP(key, digest=sha1)
+                    # print("real",teste.now())
+            except Exception as err:
+                print(err)
 
 def main():
     otp = OTP()
