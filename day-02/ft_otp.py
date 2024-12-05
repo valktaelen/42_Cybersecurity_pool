@@ -160,7 +160,7 @@ class OTP:
 
     def run(self):
         if self.generator_file is not None:
-            print("################ Generate key")
+            print(f"{bcolors.BOLD}{bcolors.UNDERLINE}{bcolors.OKBLUE}################ Generate key{bcolors.ENDC}")
             try:
                 with open(self.generator_file) as file:
                     hex_file = file.read()
@@ -189,15 +189,20 @@ class OTP:
                         hex_str += chr(byte_val)
                     base = base64.b32encode(bytearray(hex_str, 'utf-8'))
                     base = base.decode()
-                    print("hex    ", hex_file)
-                    print("str    ", hex_str)
-                    print("base32 ", base)
-                    with open("ft_otp.key", 'w') as key_file:
-                        key_file.write(base)
+                    print(f"{bcolors.OKCYAN}hex    {hex_file}{bcolors.ENDC}")
+                    print(f"{bcolors.OKCYAN}str    {hex_str}{bcolors.ENDC}")
+                    print(f"{bcolors.OKGREEN}base32 {base}{bcolors.ENDC}")
+                    try:
+                        with open("ft_otp.key", 'w') as key_file:
+                            key_file.write(base)
+                    except Exception as err:
+                        print(f"{bcolors.FAIL}Error: {key_file} : {err}{bcolors.ENDC}")
+            except OTPException as err:
+                raise err
             except Exception as err:
-                print(err)
+                print(f"{bcolors.FAIL}Error: {file} : {err}{bcolors.ENDC}")
         if self.key_file is not None:
-            print("################ TOTP")
+            print(f"{bcolors.BOLD}{bcolors.UNDERLINE}{bcolors.OKBLUE}################ TOTP{bcolors.ENDC}")
             try:
                 with open(self.key_file) as file:
                     key_file = file.read()
@@ -207,11 +212,11 @@ class OTP:
                     key = key_file[0]
                     totp = TOTP(key, digest=self.digest)
                     res = totp.run()
-                    print(f"TOTP value : {res}")
+                    print(f"{bcolors.HEADER}TOTP value : {res}{bcolors.ENDC}")
                     # teste = pyotp.TOTP(key, digest=self.digest)
                     # print("real",teste.now())
             except Exception as err:
-                print(err)
+                print(f"{bcolors.FAIL}Error: {file} : {err}{bcolors.ENDC}")
 
 def main():
     otp = OTP()
