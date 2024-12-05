@@ -1,5 +1,9 @@
 import sys
 from hashlib import sha1
+import pyotp
+import os
+import base64
+import time
 
 class bcolors:
     HEADER = '\033[95m'
@@ -22,52 +26,81 @@ class HMAC:
 
     def xor(self, b1: bytes, b2: bytes) -> bytes:
         if len(b1) < self.block_size:
-            b1 = b1 + (0).to_bytes(1, byteorder="little") * (self.block_size - len(b1))
+            b1 = b1 + b'\x00' * (self.block_size - len(b1))
         if len(b2) < self.block_size:
-            b2 = b2 + (0).to_bytes(1, byteorder="little") * (self.block_size - len(b2))
+            b2 = b2 + b'\x00' * (self.block_size - len(b2))
         return bytes([_a ^ _b for _a, _b in zip(b1, b2)])
 
-    def concate(self, b1: bytes, b2: bytes) -> bytes:
-        a1 = bytearray(b1)
-        a2 = bytearray(b2)
-        a1.extend(a2)
-        return bytes(a1)
-
-    def __init__(self, secret: bytes, message: bytes, block_size: int = 64):
+    def __init__(self, secret: bytes, message: bytes):
         self.secret = secret
         self.message = message
-        self.block_size = block_size
+        self.block_size = sha1(b"").block_size
 
     def derived_key(self):
         if len(self.secret) > self.block_size:
             return sha1(self.secret).digest()
         return self.secret
 
+    def run(self) -> bytes:
+        ipad = b'\x36' * self.block_size
+        opad = b'\x5c' * self.block_size
+        derived_key = self.derived_key()
+        ret = sha1(
+            self.xor(
+                derived_key,
+                opad
+            )
+            + sha1(
+                self.xor(
+                    derived_key,
+                    ipad
+                )
+                + self.message
+            ).digest()
+        )
+        print(f"HMAC : {ret.hexdigest()}")
+        return ret.digest()
+
+class HOTP:
+    n_digit: int
+    secret_key: int
+    counter: int
+
+
+    def __init__(self, secret_key: str, counter: int, n_digit: int = 6):
+        self.secret_key = base64.b32decode(secret_key, casefold=True)
+        self.counter = counter
+        self.n_digit = n_digit
+
+    def truncate(self, hmac: bytes) -> bytes:
+        val = hmac
+        i = val[-1] & 0xF
+        extract = val[i:i+4]
+        extract = (
+            (extract[0] & 0x7F) << 24
+            | (extract[1] & 0xFF) << 16
+            | (extract[2] & 0xFF) << 8
+            | (extract[3] & 0xFF)
+        )
+        return extract
+
+    def run(self) -> int:
+        hmac = HMAC(self.secret_key, (self.counter).to_bytes(8, byteorder="big"))
+        hotp = self.truncate(hmac.run())
+        return hotp % (10 ** self.n_digit)
+
+class TOTP:
+    def __init__(self, secret_key: str, delta_time: int = 30, n_digit: int = 6):
+        self.secret_key = secret_key
+        self.n_digit = n_digit
+        self.delta_time = delta_time
+    
     def run(self):
-        print("opad", binascii.hexlify(self.opad()))
-        print("ipad", binascii.hexlify(self.ipad()))
-        key_out = self.xor(self.derived_key(), self.opad())
-        key_in = self.xor(self.derived_key(), self.ipad())
-        concat_in = self.concate(key_in, self.message)
-        sha_in = sha1(concat_in).digest()
-        to_hash = self.concate(key_out, sha_in)
-        print("opad", self.opad())
-        print("ipad", self.ipad())
-        print("key_out", key_out)
-        print("key_in", key_in)
-        print("concat_in", concat_in)
-        print("sha_in", sha_in)
-        print("to_hash", to_hash)
-        return sha1(to_hash).hexdigest()
-
-    def ipad(self):
-        unit: bytes = (0x36).to_bytes(1, byteorder="little")
-        return unit * self.block_size
-
-    def opad(self):
-        unit: bytes = (0x5c).to_bytes(1, byteorder="little")
-        return unit * self.block_size
-
+        c: int = int(time.time() // self.delta_time)
+        hotp = HOTP(self.secret_key, c, self.n_digit)
+        res = hotp.run()
+        print(f"HOTP value : {res}")
+        return res
 class OTPException(Exception):
     pass
 
@@ -98,11 +131,13 @@ class OTP:
 
     def run(self):
         #TODO open files
-        # hmac = HMAC(str.encode("l" * 64), (54).to_bytes(8, byteorder="little"))
-        # hmac.run()
-        hmac = HMAC(str.encode("key"), str.encode("The quick brown fox jumps over the lazy dog"))
-        hmac = hmac.run()
-        print(hmac)
+        a="ONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG43TONZXG4Y="
+        teste = pyotp.HOTP(a, digest=sha1)
+        print("real",teste.at(0))
+        print("#########")
+        totp = TOTP(a)
+        res = totp.run()
+        print(f"TOTP value : {res}")
 
 def main():
     otp = OTP()
