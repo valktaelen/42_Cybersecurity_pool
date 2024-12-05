@@ -1,7 +1,6 @@
 import sys
-from hashlib import sha1
+import hashlib
 import pyotp
-import os
 import base64
 import time
 
@@ -15,7 +14,6 @@ class bcolors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
-import binascii
 
 
 
@@ -23,6 +21,7 @@ class HMAC:
     secret: bytes
     message: bytes
     block_size: int
+    digest: any
 
     def xor(self, b1: bytes, b2: bytes) -> bytes:
         if len(b1) < self.block_size:
@@ -31,26 +30,27 @@ class HMAC:
             b2 = b2 + b'\x00' * (self.block_size - len(b2))
         return bytes([_a ^ _b for _a, _b in zip(b1, b2)])
 
-    def __init__(self, secret: bytes, message: bytes):
+    def __init__(self, secret: bytes, message: bytes, digest = hashlib.sha1):
         self.secret = secret
         self.message = message
-        self.block_size = sha1(b"").block_size
+        self.digest = digest
+        self.block_size = self.digest(b"").block_size
 
     def derived_key(self):
         if len(self.secret) > self.block_size:
-            return sha1(self.secret).digest()
+            return self.digest(self.secret).digest()
         return self.secret
 
     def run(self) -> bytes:
         ipad = b'\x36' * self.block_size
         opad = b'\x5c' * self.block_size
         derived_key = self.derived_key()
-        ret = sha1(
+        ret = self.digest(
             self.xor(
                 derived_key,
                 opad
             )
-            + sha1(
+            + self.digest(
                 self.xor(
                     derived_key,
                     ipad
@@ -65,12 +65,14 @@ class HOTP:
     n_digit: int
     secret_key: int
     counter: int
+    digest: any
 
 
-    def __init__(self, secret_key: str, counter: int, n_digit: int = 6):
+    def __init__(self, secret_key: str, counter: int, n_digit: int = 6, digest = hashlib.sha1):
         self.secret_key = base64.b32decode(secret_key, casefold=True)
         self.counter = counter
         self.n_digit = n_digit
+        self.digest = digest
 
     def truncate(self, hmac: bytes) -> bytes:
         val = hmac
@@ -85,19 +87,25 @@ class HOTP:
         return extract
 
     def run(self) -> int:
-        hmac = HMAC(self.secret_key, (self.counter).to_bytes(8, byteorder="big"))
+        hmac = HMAC(self.secret_key, (self.counter).to_bytes(8, byteorder="big"), digest=self.digest)
         hotp = self.truncate(hmac.run())
         return hotp % (10 ** self.n_digit)
 
 class TOTP:
-    def __init__(self, secret_key: str, delta_time: int = 30, n_digit: int = 6):
+    secret_key: str
+    n_digit: int
+    delta_time: int
+    digest: any
+
+    def __init__(self, secret_key: str, delta_time: int = 30, n_digit: int = 6, digest = hashlib.sha1):
         self.secret_key = secret_key
         self.n_digit = n_digit
         self.delta_time = delta_time
+        self.digest = digest
 
     def run(self):
         c: int = int(time.time() // self.delta_time)
-        hotp = HOTP(self.secret_key, c, self.n_digit)
+        hotp = HOTP(self.secret_key, c, self.n_digit, digest=self.digest)
         res = hotp.run()
         print(f"HOTP value : {res}")
         return res
@@ -107,14 +115,17 @@ class OTPException(Exception):
 class OTP:
     generator_file: str | None
     key_file: str | None
+    digest: any
 
     def __init__(self):
         self.generator_file = None
         self.key_file = None
+        self.digest = hashlib.sha1
 
     def parse(self, args: list[str]):
         generator_file: bool = False
         key_file: bool = False
+        digest: bool = False
         for arg in args:
             if generator_file:
                 self.generator_file = arg
@@ -122,15 +133,32 @@ class OTP:
             elif key_file:
                 self.key_file = arg
                 key_file = False
+            elif digest:
+                if arg == "sha1":
+                    self.digest = hashlib.sha1
+                elif arg == "sha224":
+                    self.digest = hashlib.sha224
+                elif arg == "sha256":
+                    self.digest = hashlib.sha256
+                elif arg == "sha512":
+                    self.digest = hashlib.sha512
+                elif arg == "sha384":
+                    self.digest = hashlib.sha384
+                elif arg == "md5":
+                    self.digest = hashlib.md5
+                else:
+                    print(f"{arg} : digest ignored")
+                digest = False
             elif arg == "-g":
                 generator_file = True
             elif arg == "-k":
                 key_file = True
+            elif arg == "--digest":
+                digest = True
             else:
                 raise OTPException(f"The parameter {arg} not reconized")
 
     def run(self):
-        #TODO open files
         if self.generator_file is not None:
             print("################ Generate key")
             try:
@@ -177,10 +205,10 @@ class OTP:
                     if len(key_file) != 1:
                         raise OTPException(f"{self.generator_file} : not a key")
                     key = key_file[0]
-                    totp = TOTP(key)
+                    totp = TOTP(key, digest=self.digest)
                     res = totp.run()
                     print(f"TOTP value : {res}")
-                    # teste = pyotp.TOTP(key, digest=sha1)
+                    # teste = pyotp.TOTP(key, digest=self.digest)
                     # print("real",teste.now())
             except Exception as err:
                 print(err)
