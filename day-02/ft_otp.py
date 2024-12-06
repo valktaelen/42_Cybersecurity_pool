@@ -200,7 +200,7 @@ class OTP:
             except OTPException as err:
                 raise err
             except Exception as err:
-                print(f"{bcolors.FAIL}Error: {file} : {err}{bcolors.ENDC}")
+                print(f"{bcolors.FAIL}Error: {err}{bcolors.ENDC}")
         if self.key_file is not None:
             print(f"{bcolors.BOLD}{bcolors.UNDERLINE}{bcolors.OKBLUE}################ TOTP{bcolors.ENDC}")
             try:
@@ -208,7 +208,7 @@ class OTP:
                     key_file = file.read()
                     key_file = key_file.split()
                     if len(key_file) != 1:
-                        raise OTPException(f"{self.generator_file} : not a key")
+                        raise OTPException(f"not a key")
                     key = key_file[0]
                     totp = TOTP(key, digest=self.digest)
                     res = totp.run()
@@ -216,7 +216,7 @@ class OTP:
                     # teste = pyotp.TOTP(key, digest=self.digest)
                     # print("real",teste.now())
             except Exception as err:
-                print(f"{bcolors.FAIL}Error: {file} : {err}{bcolors.ENDC}")
+                print(f"{bcolors.FAIL}Error: {self.key_file} : {err}{bcolors.ENDC}")
 
 def main():
     otp = OTP()
