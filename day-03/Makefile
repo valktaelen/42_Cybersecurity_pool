@@ -1,6 +1,6 @@
 
 
-all: preconf tor
+all: preconf tor ssh
 
 preconf:
 	@apt install nginx -y
@@ -15,3 +15,10 @@ tor:
 	@systemctl restart tor@mywebsite
 	@sleep 10
 	cat /run/tor-instances/mywebsite/data/hostname
+
+ssh:
+	@cat sshd_config > /etc/ssh/sshd_config
+	@cat ssh.socket > /lib/systemd/system/ssh.socket
+	@systemctl daemon-reload
+	@systemctl restart ssh.socket
+	@systemctl restart ssh.service
