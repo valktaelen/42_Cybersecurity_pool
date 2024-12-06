@@ -10,8 +10,8 @@ preconf:
 
 tor:
 	rm -rf /home/aartiges/tor_service
-	cp torrc /etc/tor/torrc
-	chown root:root /etc/tor/torrc
-	systemctl restart tor
+	tor-instance-create mywebsite
+	cat torrc >> /etc/tor/instances/mywebsite/torrc
+	systemctl restart tor@mywebsite
 	sleep 30
-	cat /home/aartiges/tor_service/hostname
+	cat /run/tor-instances/mywebsite/data/hostname
