@@ -6,7 +6,7 @@ preconf:
 	@apt install nginx -y
 	@cp nginx.conf /etc/nginx/sites-available/default
 	@systemctl restart nginx
-	@cp website/index.html /var/www/html/index.nginx-debian.html
+	@cp index.html /var/www/html/index.nginx-debian.html
 
 tor:
 	@rm -rf /home/aartiges/tor_service
