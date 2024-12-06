@@ -173,7 +173,7 @@ class OTP:
                         raise OTPException(f"{self.generator_file} : len of hex less than 64 characters")
                     if l % 2 != 0:
                         raise OTPException(f"{self.generator_file} : not an hexadecimal")
-                    hex_str = ""
+                    hex_str = b""
                     hex_converter: dict[str, int] = {}
                     for i in range (16):
                         char = hex(i)[-1]
@@ -186,7 +186,7 @@ class OTP:
                         if fst is None or sec is None:
                             raise OTPException(f"{self.generator_file} : not an hexadecimal")
                         byte_val = (fst << 4) + sec
-                        hex_str += chr(byte_val)
+                        hex_str += byte_val.to_bytes(1, 'little')
                     base = base64.b32encode(bytearray(hex_str, 'utf-8'))
                     base = base.decode()
                     print(f"{bcolors.OKCYAN}hex    {hex_file}{bcolors.ENDC}")
