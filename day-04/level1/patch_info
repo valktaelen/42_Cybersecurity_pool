@@ -1,0 +1,7 @@
+
+    1244:       0f 85 16 00 00 00       jne    1260 <main+0xa0>
+    to
+    1244:       e9 00 00 00 00          jmp    1249 <main+0x89>
+    1249:       90                      nop
+
+python3 write.py binary/level1 1244 6 9000000000e9

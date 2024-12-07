@@ -1,0 +1,7 @@
+
+    135a:       0f 84 05 00 00 00       je     1365 <main+0x45>
+    to
+    135a:       e9 ff 01 00 00          jmp    155e <main+0x23e>
+    135f:       90                      nop
+
+python3 write.py binary/level3 135a 6 90000001ffe9

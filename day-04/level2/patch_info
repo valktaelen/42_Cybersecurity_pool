@@ -1,0 +1,7 @@
+
+    131e:       0f 84 08 00 00 00       je     132c <main+0x5c>
+    to
+    131e:       e9 50 01 00 00          jmp    1473 <main+0x1a3>
+    1323:       90                      nop
+
+python3 write.py binary/level2 131e 6 9000000150e9
