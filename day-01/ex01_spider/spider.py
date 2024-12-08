@@ -195,7 +195,7 @@ class Spider:
         print(f"status code {bcolors.OKGREEN if (code >= 200 and code < 300) else bcolors.WARNING}{code:03d}{bcolors.ENDC} | ref {len(urls):04d} | img {len(imgs):04d} | time {t:.6f}s | {url}")
         for img in imgs:
             # print(get_main_domain(img), self.main_domain)
-            if img in self.done:
+            if img in self.done or get_main_domain(img) != self.main_domain:
                 continue
             self.done.append(img)
             if img.endswith(".jpg") or img.endswith(".jpeg") or img.endswith(".png") or img.endswith(".gif") or img.endswith(".bmp"):
