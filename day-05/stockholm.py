@@ -101,7 +101,7 @@ class Stockholm():
             print(f"{relative} : {err}")
             return
         cipher = AES.new(key, mode=AES.MODE_ECB)
-        data = data + b'\x00' * (16 - len(data) % 16)
+        data = data + b'\x00' * (AES.block_size - len(data) % AES.block_size)
         if self.reverse:
             encrypt_data = cipher.decrypt(data)
         else:
