@@ -1,6 +1,6 @@
 
 
-all: preconf tor ssh
+all: preconf ssh tor
 
 preconf:
 	@echo "install & conf nginx"
