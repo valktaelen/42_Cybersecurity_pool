@@ -1,0 +1,23 @@
+services:
+  server:
+    build: ./server
+    networks:
+      - arp
+    environment:
+      - USERS=${MY_USER}|${PASSWORD}
+    container_name: ftp_serv
+
+  client:
+    build: ./client
+    networks:
+      - arp
+    environment:
+      - MY_USER=${MY_USER}
+      - MY_PASSWORD=${PASSWORD}
+    depends_on:
+      - server
+    container_name: ftp_client
+
+networks:
+  arp:
+    driver: bridge
