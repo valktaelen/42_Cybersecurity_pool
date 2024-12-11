@@ -5,7 +5,6 @@ ENV		=./venv
 all: $(ENV) activate
 
 $(ENV):
-	python3 -m pip install virtualenv
 	mkdir -p $(ENV)
 	python3 -m venv $(ENV)
 
