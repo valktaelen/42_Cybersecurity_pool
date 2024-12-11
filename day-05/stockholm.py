@@ -55,8 +55,11 @@ class Stockholm():
         next_is_key: bool = False
         for arg in argv[1:]:
             if next_is_key:
-                self.reverse_key = bytes.fromhex(arg)
-                next_is_key = False
+                try:
+                    self.reverse_key = bytes.fromhex(arg)
+                    next_is_key = False
+                except Exception as e:
+                    raise StockholmException(e)
             elif arg in FLAGS['help']:
                 self.help = True
             elif arg in FLAGS['version']:   
@@ -101,10 +104,10 @@ class Stockholm():
             print(f"{relative} : {err}")
             return
         cipher = AES.new(key, mode=AES.MODE_ECB)
-        data = data + b'\x00' * (AES.block_size - len(data) % AES.block_size)
         if self.reverse:
             encrypt_data = cipher.decrypt(data)
         else:
+            data = data + b'\x00' * (AES.block_size - len(data) % AES.block_size)
             encrypt_data = cipher.encrypt(data)
         try:
             with new_path.open('w+b') as new_file:

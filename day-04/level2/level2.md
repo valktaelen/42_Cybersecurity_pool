@@ -256,4 +256,9 @@ EOF
 ```
 0x15a = atoi
 
+```bash
+gdb --batch -ex 'b *main+0x163' -ex r -ex 'p *((int*)($ebp+$eax-0x1d))' -ex 'p/u $cl' -ex c -ex 'p *((int*)($ebp+$eax-0x1d))' -ex 'p/u $cl' level2 <<EOF
+00142097
+EOF
+```
 
