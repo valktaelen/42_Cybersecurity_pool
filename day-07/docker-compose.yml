@@ -18,6 +18,17 @@ services:
       - server
     container_name: ftp_client
 
+  inquisitor:
+    build: ./inquisitor
+    networks:
+      - arp
+    depends_on:
+      - server
+      - client
+    volumes:
+      - "./inquisitor/inquisitor.py:/app/inquisitor.py"
+    container_name: inquisitor
+
 networks:
   arp:
     driver: bridge
