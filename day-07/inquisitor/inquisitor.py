@@ -16,7 +16,6 @@ IFACE='eth0'
 
 OP_REQUEST=1
 OP_REPLY=2
-ARP_PORT=219
 FTP_PORT=21
 SNIFFER=None
 
@@ -58,9 +57,6 @@ def get_my_ip():
     hostname = socket.gethostname()
     IPAddr = socket.gethostbyname(hostname)
     return ipaddress.IPv4Address(IPAddr)
-
-def send_arp_request(ip: str, mac_addr: str):
-    pass
 
 def get_mac_for_ip(ip_src: ipaddress.IPv4Address, mac_src: bytes, ip_dst: ipaddress.IPv4Address) -> str | None:
     res = sr1(ARP(op=OP_REQUEST, psrc=str(ip_src), pdst=str(ip_dst), hwsrc=mac_src))
