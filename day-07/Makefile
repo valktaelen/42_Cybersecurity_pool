@@ -8,7 +8,7 @@ up:
 	@docker inspect -f '{{.Name}} {{range.NetworkSettings.Networks}}{{.IPAddress}} {{.MacAddress}}{{end}}' inquisitor
 
 down:
-	docker compose down
+	docker compose down -v
 
 logs:
 	docker compose logs -f
