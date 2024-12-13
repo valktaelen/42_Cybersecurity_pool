@@ -95,6 +95,14 @@ def main(argv: list[str]):
     iface = get_if_list()
     if IFACE not in iface:
         raise InquisitorException(f"interface {IFACE} not found")
+    if ip_src == ip_target or mac_src == mac_target:
+        raise InquisitorException(f"src and target are the same (IP or MAC)")
+    test_mac = get_mac_for_ip(my_ip_addr, my_mac_addr, ip_src)
+    if test_mac != str_mac_src:
+        raise InquisitorException(f"Parameter error : {ip_src} not corresponding to {str_mac_src}, it is {test_mac}")
+    test_mac = get_mac_for_ip(my_ip_addr, my_mac_addr, ip_target)
+    if test_mac != str_mac_target:
+        raise InquisitorException(f"Parameter error : {ip_target} not corresponding to {str_mac_target}, it is {test_mac}")
 
     ips = {str_ip_src: str_mac_src, str_ip_target: str_mac_target}
     SNIFFER = AsyncSniffer(iface=IFACE, lfilter=lambda x: (x.haslayer(Ether) and x.haslayer(IP) and get_mac(x[Ether].dst) == my_mac_addr and x[IP].src in ips.keys() and x[IP].dst in ips.keys()))
