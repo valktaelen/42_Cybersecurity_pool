@@ -25,6 +25,13 @@ FLAGS={
     "print_content": ["--file-content", "-c"],
     "print_ftp": ["--all_ftp", "-f"],
 }
+STR_infos={
+    "src_ip": None,
+    "src_mac": None,
+    "dst_ip": None,
+    "dst_mac": None,
+}
+ARP_modif=False
 
 class InquisitorException(Exception):
     pass
@@ -79,14 +86,16 @@ def send_arp(ip_src: ipaddress.IPv4Address, mac_src: bytes, ip_dst: ipaddress.IP
     return sendp(a, IFACE, verbose=False)
 
 def main(argv: list[str]):
+    global ARP_modif
+    global STR_infos
     if len(argv) < 5:
         raise InquisitorException("need 4 arguments at least")
     verbose = False
     print_file_content=False
-    str_ip_src = ""
-    str_ip_target = ""
-    str_mac_src = ""
-    str_mac_target = ""
+    STR_infos['src_ip'] = ""
+    STR_infos['dst_ip'] = ""
+    STR_infos['src_mac'] = ""
+    STR_infos['dst_mac'] = ""
     for arg in argv[1:]:
         if arg in FLAGS["print_all"]:
             verbose = True
@@ -95,20 +104,20 @@ def main(argv: list[str]):
             print_file_content = True
         elif arg in FLAGS["print_ftp"]:
             verbose = True
-        elif str_ip_src == "":
-            str_ip_src = arg
-        elif str_mac_src == "":
-            str_mac_src = arg
-        elif str_ip_target == "":
-            str_ip_target = arg
-        elif str_mac_target == "":
-            str_mac_target = arg
+        elif STR_infos['src_ip'] == "":
+            STR_infos['src_ip'] = arg
+        elif STR_infos['src_mac'] == "":
+            STR_infos['src_mac'] = arg
+        elif STR_infos['dst_ip'] == "":
+            STR_infos['dst_ip'] = arg
+        elif STR_infos['dst_mac'] == "":
+            STR_infos['dst_mac'] = arg
         else:
             raise InquisitorException(f"{arg} not a param or a flag")
-    ip_src = get_ip(str_ip_src)
-    mac_src = get_mac(str_mac_src)
-    ip_target = get_ip(str_ip_target)
-    mac_target = get_mac(str_mac_target)
+    ip_src = get_ip(STR_infos['src_ip'])
+    mac_src = get_mac(STR_infos['src_mac'])
+    ip_target = get_ip(STR_infos['dst_ip'])
+    mac_target = get_mac(STR_infos['dst_mac'])
     my_mac_addr = uuid.getnode().to_bytes(6, "big")
     my_ip_addr = get_my_ip()
     str_my_ip_addr = str(my_ip_addr)
@@ -121,14 +130,15 @@ def main(argv: list[str]):
     if ip_src == ip_target or mac_src == mac_target:
         raise InquisitorException(f"src and target are the same (IP or MAC)")
     test_mac = get_mac_for_ip(my_ip_addr, my_mac_addr, ip_src)
-    if test_mac != str_mac_src:
-        raise InquisitorException(f"Parameter error : {ip_src} not corresponding to {str_mac_src}, it is {test_mac}")
+    if test_mac != STR_infos['src_mac']:
+        raise InquisitorException(f"Parameter error : {ip_src} not corresponding to {STR_infos['src_mac']}, it is {test_mac}")
     test_mac = get_mac_for_ip(my_ip_addr, my_mac_addr, ip_target)
-    if test_mac != str_mac_target:
-        raise InquisitorException(f"Parameter error : {ip_target} not corresponding to {str_mac_target}, it is {test_mac}")
+    if test_mac != STR_infos['dst_mac']:
+        raise InquisitorException(f"Parameter error : {ip_target} not corresponding to {STR_infos['dst_mac']}, it is {test_mac}")
 
     last_file = ""
-    ips = {str_ip_src: str_mac_src, str_ip_target: str_mac_target}
+    ips = {STR_infos['src_ip']: STR_infos['src_mac'], STR_infos['dst_ip']: STR_infos['dst_mac']}
+    ARP_modif = True
     SNIFFER = AsyncSniffer(iface=IFACE, lfilter=lambda x: (x.haslayer(Ether) and x.haslayer(IP) and get_mac(x[Ether].dst) == my_mac_addr and x[IP].src in ips.keys() and x[IP].dst in ips.keys()))
     SNIFFER.start()
     while True:
@@ -168,21 +178,33 @@ python3 inquisitor.py <IP-src> <MAC-src> <IP-target> <SRC-target>
 {",".join(FLAGS['print_ftp'])}      print all ftp trafic
 """)
 
-def signal_handler(signum, frame):
+def restore_arp(signum, frame):
+    global ARP_modif
+    global STR_infos
     print("Ctrl+C caught! Exiting gracefully...")
-    print("Restore arp tables")
-    my_mac_addr = uuid.getnode().to_bytes(6, "big")
-    my_ip_addr = get_my_ip()
-    send_arp(my_ip_addr, my_mac_addr, ipaddress.IPv4Address(sys.argv[1]), get_mac(sys.argv[2]))
-    send_arp(my_ip_addr, my_mac_addr, ipaddress.IPv4Address(sys.argv[3]), get_mac(sys.argv[4]))
-    send_arp(ipaddress.IPv4Address(sys.argv[3]), get_mac(sys.argv[4]), ipaddress.IPv4Address(sys.argv[1]), get_mac(sys.argv[2]))
-    send_arp(ipaddress.IPv4Address(sys.argv[1]), get_mac(sys.argv[2]), ipaddress.IPv4Address(sys.argv[3]), get_mac(sys.argv[4]))
+    if ARP_modif:
+        print("Restore arp tables")
+        try:
+            my_mac_addr = uuid.getnode().to_bytes(6, "big")
+            my_ip_addr = get_my_ip()
+            send_arp(my_ip_addr, my_mac_addr, ipaddress.IPv4Address(STR_infos["src_ip"]), get_mac(STR_infos['src_mac']))
+            send_arp(my_ip_addr, my_mac_addr, ipaddress.IPv4Address(STR_infos['dst_ip']), get_mac(STR_infos['dst_mac']))
+            send_arp(ipaddress.IPv4Address(STR_infos['dst_ip']), get_mac(STR_infos['dst_mac']), ipaddress.IPv4Address(STR_infos["src_ip"]), get_mac(STR_infos['src_mac']))
+            send_arp(ipaddress.IPv4Address(STR_infos["src_ip"]), get_mac(STR_infos['src_mac']), ipaddress.IPv4Address(STR_infos['dst_ip']), get_mac(STR_infos['dst_mac']))
+        except Exception as e:
+            print(e)
     sys.exit(0)
 
 if __name__ == '__main__':
     try:
-        signal.signal(signal.SIGINT, signal_handler)
-        main(sys.argv)
+        signal.signal(signal.SIGINT, restore_arp)
+        try:
+            main(sys.argv)
+        except Exception as e:
+            restore_arp(None, None)
+            print(e)
+        except InquisitorException as e:
+            raise e
     except InquisitorException as e:
         print(f"Error : {e}")
         usage()
