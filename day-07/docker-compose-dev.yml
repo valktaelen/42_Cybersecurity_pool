@@ -21,12 +21,14 @@ services:
   inquisitor:
     build:
       context: ./inquisitor
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile_dev
     networks:
       - arp
     depends_on:
       - server
       - client
+    volumes:
+      - "./inquisitor/inquisitor.py:/app/inquisitor.py"
     container_name: inquisitor
 
 networks:
