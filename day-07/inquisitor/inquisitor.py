@@ -200,11 +200,13 @@ if __name__ == '__main__':
         signal.signal(signal.SIGINT, restore_arp)
         try:
             main(sys.argv)
-        except Exception as e:
-            restore_arp(None, None)
-            print(e)
         except InquisitorException as e:
+            restore_arp(None, None)
             raise e
+        except Exception as e:
+            print(e)
+        finally:
+            restore_arp(None, None)
     except InquisitorException as e:
         print(f"Error : {e}")
         usage()
